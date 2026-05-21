@@ -1,72 +1,107 @@
-"""Simple CLI entry-point for crontab-viz.
-
-Usage examples::
-
-    python -m crontab_viz.cli --text '0 9 * * * /bin/backup' --export json
-    python -m crontab_viz.cli --file /etc/crontab --export csv --out schedule.csv
-    python -m crontab_viz.cli --user  # live dashboard from current user crontab
-"""
+"""Command-line interface for crontab-viz."""
 from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
+from typing import List, Optional
 
 from crontab_viz.dashboard import run_dashboard
-from crontab_viz.exporter import export_csv, export_json, export_to_file
+from crontab_viz.exporter import export_to_file
+from crontab_viz.filter import FilterCriteria, filter_entries, search_entries
+from crontab_viz.formatter import format_entries, render_table
 from crontab_viz.loader import load_from_file, load_from_text, load_user_crontab
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         prog="crontab-viz",
-        description="Visualize and export crontab schedules.",
+        description="Visualize and inspect crontab schedules.",
     )
-    source = p.add_mutually_exclusive_group(required=True)
-    source.add_argument("--text", metavar="CRONTAB", help="Inline crontab text.")
-    source.add_argument("--file", metavar="PATH", help="Path to a crontab file.")
-    source.add_argument("--user", action="store_true", help="Load the current user's crontab.")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--file", metavar="PATH", help="Load crontab from a file.")
+    source.add_argument(
+        "--text", metavar="TEXT", help="Load crontab from an inline string."
+    )
+    source.add_argument(
+        "--user",
+        action="store_true",
+        default=True,
+        help="Load the current user's crontab (default).",
+    )
 
-    p.add_argument(
+    parser.add_argument(
+        "--search", metavar="QUERY", help="Filter entries by command or comment."
+    )
+    parser.add_argument(
+        "--tag",
+        metavar="TAG",
+        action="append",
+        dest="tags",
+        help="Filter entries whose comment contains TAG (repeatable).",
+    )
+    parser.add_argument(
+        "--valid-only",
+        action="store_true",
+        help="Show only syntactically valid entries.",
+    )
+    parser.add_argument(
         "--export",
-        choices=["json", "csv"],
-        default=None,
-        help="Export format instead of running the live dashboard.",
+        metavar="PATH",
+        help="Export filtered entries to a JSON or CSV file.",
     )
-    p.add_argument("--out", metavar="PATH", default=None, help="Output file for --export (default: stdout).")
-    p.add_argument("--once", action="store_true", help="Render the dashboard once and exit (no loop).")
-    return p
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Run as a live dashboard (refreshes every 5 seconds).",
+    )
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=5,
+        metavar="SECS",
+        help="Refresh interval for --watch mode (default: 5).",
+    )
+    return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
 
     # --- load entries ---
-    if args.text:
-        entries = load_from_text(args.text)
-        source_label = "<inline>"
-    elif args.file:
+    if args.file:
         entries = load_from_file(args.file)
         source_label = args.file
+    elif args.text:
+        entries = load_from_text(args.text)
+        source_label = "<inline>"
     else:
         entries = load_user_crontab()
         source_label = "user crontab"
 
-    # --- export mode ---
+    # --- filter ---
+    if args.search:
+        entries = search_entries(entries, args.search)
+
+    criteria = FilterCriteria(
+        only_valid=args.valid_only,
+        tags=args.tags or [],
+    )
+    entries = filter_entries(entries, criteria)
+
+    # --- export ---
     if args.export:
-        now = datetime.now()
-        if args.out:
-            export_to_file(args.out, entries, fmt=args.export, now=now)
-            print(f"Exported {len(entries)} entries to {args.out} ({args.export}).")
-        else:
-            if args.export == "json":
-                print(export_json(entries, now=now))
-            else:
-                print(export_csv(entries, now=now), end="")
+        export_to_file(entries, args.export)
+        print(f"Exported {len(entries)} entries to {args.export}")
         return 0
 
-    # --- dashboard mode ---
-    run_dashboard(entries, source=source_label, once=args.once)
+    # --- watch / static ---
+    if args.watch:
+        run_dashboard(entries, source=source_label, interval=args.interval)
+    else:
+        rows = format_entries(entries)
+        print(render_table(rows))
+
     return 0
 
 
