@@ -61,6 +61,29 @@ def next_run(entry: CronEntry, after: Optional[datetime] = None) -> Optional[dat
     return None
 
 
+def next_n_runs(
+    entry: CronEntry,
+    n: int,
+    after: Optional[datetime] = None,
+) -> list[datetime]:
+    """Return the next *n* datetimes at which *entry* would fire.
+
+    Each subsequent run is computed starting from the previous result, so the
+    returned list is always in ascending chronological order.  If fewer than
+    *n* matches are found within the one-year scan window the list will be
+    shorter than requested.
+    """
+    results: list[datetime] = []
+    reference = after
+    for _ in range(n):
+        nxt = next_run(entry, after=reference)
+        if nxt is None:
+            break
+        results.append(nxt)
+        reference = nxt
+    return results
+
+
 def countdown(entry: CronEntry, after: Optional[datetime] = None) -> Optional[timedelta]:
     """Return the timedelta until *entry* next fires, or ``None``."""
     reference = after or datetime.now()
