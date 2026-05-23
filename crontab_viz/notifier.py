@@ -65,3 +65,20 @@ def format_alerts(alerts: List[DueAlert]) -> str:
         return "No jobs due within threshold."
     lines = [str(alert) for alert in alerts]
     return "\n".join(lines)
+
+
+def filter_alerts_by_command(
+    alerts: List[DueAlert],
+    substring: str,
+) -> List[DueAlert]:
+    """Filter DueAlert objects whose command contains the given substring.
+
+    Args:
+        alerts: List of DueAlert objects to filter.
+        substring: Case-insensitive substring to match against each entry's command.
+
+    Returns:
+        A list of DueAlert objects whose command contains the substring.
+    """
+    needle = substring.lower()
+    return [alert for alert in alerts if needle in alert.entry.command.lower()]
