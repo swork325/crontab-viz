@@ -18,6 +18,18 @@ class TaggedEntry:
         """Return True if *tag* is present (case-insensitive)."""
         return tag.lower() in (t.lower() for t in self.tags)
 
+    def add_tag(self, tag: str) -> None:
+        """Add *tag* if it is not already present (case-insensitive)."""
+        if not self.has_tag(tag):
+            self.tags.append(tag)
+
+    def remove_tag(self, tag: str) -> bool:
+        """Remove *tag* (case-insensitive). Return True if it was present."""
+        lower = tag.lower()
+        before = len(self.tags)
+        self.tags = [t for t in self.tags if t.lower() != lower]
+        return len(self.tags) < before
+
 
 # ---------------------------------------------------------------------------
 # Auto-tagging rules
