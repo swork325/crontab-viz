@@ -56,6 +56,13 @@ def test_highlight_schedule_invalid_field_count():
     assert result.field_labels == []
 
 
+def test_highlight_schedule_field_labels_contain_all_field_names():
+    """All five standard field names should appear in the labels for a full schedule."""
+    result = highlight_schedule("0 12 1 6 3")
+    field_names = [label[0] for label in result.field_labels]
+    assert field_names == ["minute", "hour", "day-of-month", "month", "day-of-week"]
+
+
 def test_highlight_command_short_unchanged():
     cmd = "/usr/bin/backup.sh"
     result = highlight_command(cmd)
@@ -67,13 +74,13 @@ def test_highlight_command_truncated():
     long_cmd = "a" * 80
     result = highlight_command(long_cmd, max_len=20)
     # Stripped ANSI: original 80 chars should be truncated
-    assert "…" in result
+    assert "\u2026" in result
 
 
 def test_highlight_command_exact_max_len_not_truncated():
     cmd = "a" * 60
     result = highlight_command(cmd, max_len=60)
-    assert "…" not in result
+    assert "\u2026" not in result
 
 
 def test_highlight_comment_non_empty():
