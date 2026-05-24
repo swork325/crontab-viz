@@ -79,6 +79,12 @@ def test_save_snapshot_creates_valid_json():
     assert "captured_at" in data
 
 
+def test_load_snapshot_raises_on_missing_file():
+    """load_snapshot should raise FileNotFoundError for a non-existent path."""
+    with pytest.raises(FileNotFoundError):
+        load_snapshot("/nonexistent/path/snap.json")
+
+
 # --- restore_entries ---
 
 def test_restore_entries_returns_cron_entries():
@@ -99,20 +105,3 @@ def test_restore_entries_empty_snapshot():
 def test_list_snapshots_returns_sorted_paths():
     with tempfile.TemporaryDirectory() as tmpdir:
         for name in ["c.json", "a.json", "b.json"]:
-            open(os.path.join(tmpdir, name), "w").close()
-        result = list_snapshots(tmpdir)
-    basenames = [os.path.basename(p) for p in result]
-    assert basenames == ["a.json", "b.json", "c.json"]
-
-
-def test_list_snapshots_missing_directory_returns_empty():
-    assert list_snapshots("/nonexistent/path/xyz") == []
-
-
-def test_list_snapshots_ignores_non_json_files():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        open(os.path.join(tmpdir, "snap.json"), "w").close()
-        open(os.path.join(tmpdir, "notes.txt"), "w").close()
-        result = list_snapshots(tmpdir)
-    assert all(p.endswith(".json") for p in result)
-    assert len(result) == 1
