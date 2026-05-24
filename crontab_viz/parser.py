@@ -14,11 +14,14 @@ class CronEntry:
     command: str
     comment: Optional[str] = None
     fields: dict = field(default_factory=dict)
+    is_reboot: bool = False
 
     def __post_init__(self):
         self.fields = self._parse_fields()
 
     def _parse_fields(self) -> dict:
+        if self.is_reboot:
+            return {"minute": "*", "hour": "*", "day_of_month": "*", "month": "*", "day_of_week": "*"}
         parts = self.schedule.split()
         if len(parts) != 5:
             return {}
@@ -26,7 +29,7 @@ class CronEntry:
         return dict(zip(keys, parts))
 
     def is_valid(self) -> bool:
-        return len(self.fields) == 5
+        return self.is_reboot or len(self.fields) == 5
 
 
 SPECIAL_SCHEDULES = {
@@ -56,6 +59,10 @@ def parse_crontab_line(line: str) -> Optional[CronEntry]:
         if line.startswith(alias):
             command = line[len(alias):].strip()
             return CronEntry(raw=line, schedule=expansion, command=command, comment=comment)
+
+    if line.startswith("@reboot"):
+        command = line[len("@reboot"):].strip()
+        return CronEntry(raw=line, schedule="@reboot", command=command, comment=comment, is_reboot=True)
 
     parts = line.split(None, 5)
     if len(parts) < 6:
