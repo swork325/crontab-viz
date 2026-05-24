@@ -36,16 +36,22 @@ def next_run(entry: CronEntry, after: Optional[datetime] = None) -> Optional[dat
 
     Scans minute-by-minute starting one minute after *after* (defaults to
     ``datetime.now()``).
-    Returns ``None`` if no match is found within one year.
+    Returns ``None`` if no match is found within one year or if the entry
+    is a ``@reboot`` entry (which only runs once at boot time).
     """
+    if entry.is_reboot:
+        return None
     if not entry.is_valid:
         return None
 
     start = (after or datetime.now()).replace(second=0, microsecond=0)
     candidate = start + timedelta(minutes=1)
 
-    fields = entry.fields  # (minute, hour, dom, month, dow)
-    minute_f, hour_f, dom_f, month_f, dow_f = fields
+    minute_f = entry.fields.get("minute", "*")
+    hour_f = entry.fields.get("hour", "*")
+    dom_f = entry.fields.get("day_of_month", "*")
+    month_f = entry.fields.get("month", "*")
+    dow_f = entry.fields.get("day_of_week", "*")
 
     for _ in range(_MAX_SCAN_MINUTES):
         if (
