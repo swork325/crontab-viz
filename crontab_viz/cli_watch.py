@@ -42,7 +42,19 @@ def _on_change(event: WatchEvent) -> None:
 
 
 def _run_watch(args: argparse.Namespace) -> int:
-    print(f"Watching {args.file!r} every {args.interval}s … (Ctrl-C to stop)")
+    """Run the watch sub-command.
+
+    Validates the polling interval before starting, then delegates to
+    :func:`crontab_viz.watchdog.watch_file` until interrupted or the
+    maximum iteration count is reached.
+
+    Returns 0 on success, 1 if argument validation fails.
+    """
+    if args.interval <= 0:
+        print(f"error: --interval must be a positive number, got {args.interval}", file=sys.stderr)
+        return 1
+
+    print(f"Watching {args.file!r} every {args.interval}s \u2026 (Ctrl-C to stop)")
     sys.stdout.flush()
     try:
         watch_file(
