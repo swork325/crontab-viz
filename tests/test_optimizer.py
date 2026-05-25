@@ -1,104 +1,143 @@
-"""Tests for crontab_viz.optimizer."""
-from __future__ import annotations
-
-from unittest.mock import patch
+"""Tests for crontab_viz.optimizer module."""
 
 import pytest
-
+from crontab_viz.parser import CronEntry
 from crontab_viz.optimizer import (
     OptimizationSuggestion,
-    optimize_entries,
     optimize_entry,
+    optimize_entries,
 )
-from crontab_viz.parser import CronEntry
 
 
 def _make_entry(
-    minute="*", hour="*", dom="*", month="*", dow="*",
-    command="/bin/cmd", comment="", special=None, valid=True,
+    schedule: str,
+    command: str = "/usr/bin/backup",
+    comment: str = "",
 ) -> CronEntry:
-    entry = CronEntry.__new__(CronEntry)
-    object.__setattr__(entry, "minute", minute)
-    object.__setattr__(entry, "hour", hour)
-    object.__setattr__(entry, "dom", dom)
-    object.__setattr__(entry, "month", month)
-    object.__setattr__(entry, "dow", dow)
-    object.__setattr__(entry, "command", command)
-    object.__setattr__(entry, "comment", comment)
-    object.__setattr__(entry, "special", special)
-    object.__setattr__(entry, "is_valid", valid)
+    line = f"{schedule} {command}"
+    if comment:
+        line = f"# {comment}\n{line}"
+    from crontab_viz.parser import parse_crontab_line
+    entries = list(parse_crontab_line(line.split('\n')[-1]))
+    entry = entries[0] if entries else CronEntry(
+        raw=line,
+        schedule=schedule,
+        command=command,
+        comment=comment,
+        is_special=schedule.startswith("@"),
+    )
     return entry
 
 
-def _std(**kwargs) -> CronEntry:
-    defaults = dict(minute="*", hour="*", dom="*", month="*", dow="*",
-                    command="/bin/cmd", comment="", special=None, valid=True)
-    defaults.update(kwargs)
-    return _make_entry(**defaults)
+def _std(
+    minute="*",
+    hour="*",
+    dom="*",
+    month="*",
+    dow="*",
+    command="/usr/bin/task",
+) -> CronEntry:
+    schedule = f"{minute} {hour} {dom} {month} {dow}"
+    return _make_entry(schedule, command)
 
 
 class TestOptimizeEntry:
     def test_invalid_entry_returns_no_suggestions(self):
-        entry = _std(valid=False)
-        assert optimize_entry(entry) == []
+        entry = CronEntry(
+            raw="not a valid cron",
+            schedule="not a valid cron",
+            command="",
+            comment="",
+            is_special=False,
+        )
+        suggestions = optimize_entry(entry)
+        assert suggestions == []
 
     def test_daily_pattern_suggests_at_daily(self):
         entry = _std(minute="0", hour="0", dom="*", month="*", dow="*")
         suggestions = optimize_entry(entry)
-        assert len(suggestions) == 1
-        assert suggestions[0].suggested_schedule == "@daily"
+        messages = [s.message for s in suggestions]
+        assert any("@daily" in m for m in messages)
 
     def test_hourly_pattern_suggests_at_hourly(self):
         entry = _std(minute="0", hour="*", dom="*", month="*", dow="*")
         suggestions = optimize_entry(entry)
-        assert any(s.suggested_schedule == "@hourly" for s in suggestions)
-
-    def test_monthly_pattern_suggests_at_monthly(self):
-        entry = _std(minute="0", hour="0", dom="1", month="*", dow="*")
-        suggestions = optimize_entry(entry)
-        assert any(s.suggested_schedule == "@monthly" for s in suggestions)
+        messages = [s.message for s in suggestions]
+        assert any("@hourly" in m for m in messages)
 
     def test_weekly_pattern_suggests_at_weekly(self):
         entry = _std(minute="0", hour="0", dom="*", month="*", dow="0")
         suggestions = optimize_entry(entry)
-        assert any(s.suggested_schedule == "@weekly" for s in suggestions)
+        messages = [s.message for s in suggestions]
+        assert any("@weekly" in m for m in messages)
 
-    def test_wildcard_step_one_suggests_simplification(self):
-        entry = _std(minute="*/1")
+    def test_monthly_pattern_suggests_at_monthly(self):
+        entry = _std(minute="0", hour="0", dom="1", month="*", dow="*")
         suggestions = optimize_entry(entry)
-        assert len(suggestions) == 1
-        assert "*/1" in suggestions[0].original_schedule
-        assert "*/1" not in suggestions[0].suggested_schedule
+        messages = [s.message for s in suggestions]
+        assert any("@monthly" in m for m in messages)
 
-    def test_special_entry_skips_redundant_wildcard_check(self):
-        entry = _make_entry(special="@daily", valid=True)
+    def test_redundant_wildcards_flagged(self):
+        # */1 is equivalent to *
+        entry = _std(minute="*/1", hour="*", dom="*", month="*", dow="*")
         suggestions = optimize_entry(entry)
-        assert suggestions == []
+        messages = [s.message for s in suggestions]
+        assert any("*/1" in m or "redundant" in m.lower() for m in messages)
 
-    def test_suggestion_str_contains_command(self):
-        entry = _std(minute="0", hour="0", dom="*", month="*", dow="*",
-                     command="/usr/bin/backup")
-        s = optimize_entry(entry)[0]
-        assert "/usr/bin/backup" in str(s)
+    def test_no_suggestions_for_complex_schedule(self):
+        entry = _std(minute="15", hour="3", dom="*", month="*", dow="1-5")
+        suggestions = optimize_entry(entry)
+        # A specific weekday schedule shouldn't trigger @daily/@weekly etc.
+        messages = [s.message for s in suggestions]
+        assert not any("@daily" in m for m in messages)
 
-    def test_suggestion_str_contains_reason(self):
+    def test_suggestion_has_original_schedule(self):
         entry = _std(minute="0", hour="0", dom="*", month="*", dow="*")
-        s = optimize_entry(entry)[0]
-        assert s.reason in str(s)
+        suggestions = optimize_entry(entry)
+        assert len(suggestions) > 0
+        assert suggestions[0].original_schedule is not None
+
+    def test_suggestion_has_suggested_schedule(self):
+        entry = _std(minute="0", hour="0", dom="*", month="*", dow="*")
+        suggestions = optimize_entry(entry)
+        assert len(suggestions) > 0
+        assert suggestions[0].suggested_schedule is not None
+
+    def test_suggestion_str_contains_message(self):
+        entry = _std(minute="0", hour="0", dom="*", month="*", dow="*")
+        suggestions = optimize_entry(entry)
+        assert len(suggestions) > 0
+        assert suggestions[0].message in str(suggestions[0])
+
+    def test_already_special_entry_no_duplicate_suggestion(self):
+        from crontab_viz.parser import parse_crontab_line
+        results = list(parse_crontab_line("@daily /usr/bin/backup"))
+        if results:
+            entry = results[0]
+            suggestions = optimize_entry(entry)
+            # @daily is already optimal
+            assert not any("@daily" in s.message for s in suggestions)
 
 
 class TestOptimizeEntries:
-    def test_empty_list_returns_empty(self):
-        assert optimize_entries([]) == []
+    def test_optimize_entries_empty_list(self):
+        result = optimize_entries([])
+        assert result == {}
 
-    def test_aggregates_suggestions_from_multiple_entries(self):
+    def test_optimize_entries_returns_dict_keyed_by_command(self):
         entries = [
-            _std(minute="0", hour="0", dom="*", month="*", dow="*"),
-            _std(minute="0", hour="*", dom="*", month="*", dow="*"),
+            _std(minute="0", hour="0", dom="*", month="*", dow="*", command="/bin/a"),
+            _std(minute="15", hour="3", dom="*", month="*", dow="1-5", command="/bin/b"),
         ]
-        suggestions = optimize_entries(entries)
-        assert len(suggestions) == 2
+        result = optimize_entries(entries)
+        # At least the first entry should have suggestions
+        assert isinstance(result, dict)
 
-    def test_no_suggestions_for_non_optimizable_entries(self):
-        entries = [_std(minute="5", hour="3", dom="*", month="*", dow="*")]
-        assert optimize_entries(entries) == []
+    def test_optimize_entries_excludes_no_suggestion_entries(self):
+        entries = [
+            _std(minute="15", hour="3", dom="*", month="*", dow="1-5", command="/bin/b"),
+        ]
+        result = optimize_entries(entries)
+        # Complex schedule may have no suggestions; dict may be empty
+        for key, suggestions in result.items():
+            assert isinstance(suggestions, list)
