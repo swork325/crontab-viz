@@ -49,7 +49,7 @@ def _render(tagged: List[TaggedEntry]) -> str:
     for te in tagged:
         label = f"{te.entry.schedule}  {te.entry.command}"
         if len(label) > col_w:
-            label = label[: col_w - 1] + "…"
+            label = label[: col_w - 1] + "\u2026"
         tag_str = ", ".join(te.tags) if te.tags else "(none)"
         lines.append(f"{label:<{col_w}}  {tag_str}")
     return "\n".join(lines)
@@ -76,6 +76,11 @@ def _run_tag(args: argparse.Namespace, out=sys.stdout) -> int:
 
 
 def main(argv: Optional[List[str]] = None) -> None:
+    """Entry point for the standalone ``crontab-tag`` command.
+
+    Parses *argv* (defaults to ``sys.argv[1:]``) and runs the tag sub-command.
+    Exits with a non-zero status code on failure.
+    """
     parser = argparse.ArgumentParser(
         prog="crontab-tag",
         description="Show crontab entries with auto-generated tags",
@@ -88,7 +93,3 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--no-auto", action="store_true", default=False)
     args = parser.parse_args(argv)
     sys.exit(_run_tag(args))
-
-
-if __name__ == "__main__":  # pragma: no cover
-    main()
